@@ -40,9 +40,9 @@ final class PostWeeklyPriorities extends Command
         $io = new SymfonyStyle($input, $output);
 
         // Get configuration
-        $this->slackToken = $input->getOption('slack-token') ?? $_ENV['SLACK_OAUTH_TOKEN'] ?? '';
-        $this->channelId = $input->getOption('channel-id') ?? $_ENV['SLACK_CHANNEL_ID'] ?? '';
-        $this->linearApiKey = $input->getOption('linear-api-key') ?? $_ENV['LINEAR_API_KEY'] ?? '';
+        $this->slackToken = $input->getOption('slack-token') ?: getenv('SLACK_OAUTH_TOKEN') ?: '';
+        $this->channelId = $input->getOption('channel-id') ?: getenv('SLACK_CHANNEL_ID') ?: '';
+        $this->linearApiKey = $input->getOption('linear-api-key') ?: getenv('LINEAR_API_KEY') ?: '';
         $threadTs = $input->getOption('thread-ts');
         $isDryRun = $input->getOption('dry-run');
 
