@@ -319,20 +319,12 @@ class PostWeeklyPriorities extends Command
         $blocks = [];
 
         foreach ($weeklyIssues as $weekData) {
-            // Add week header using rich_text block
+            // Add week header using header block
             $blocks[] = [
-                'type' => 'rich_text',
-                'elements' => [
-                    [
-                        'type' => 'rich_text_section',
-                        'elements' => [
-                            [
-                                'type' => 'text',
-                                'text' => $weekData['week'],
-                                'style' => ['bold' => true],
-                            ],
-                        ],
-                    ],
+                'type' => 'header',
+                'text' => [
+                    'type' => 'plain_text',
+                    'text' => $weekData['week'],
                 ],
             ];
 
@@ -391,11 +383,6 @@ class PostWeeklyPriorities extends Command
                         ],
                     ],
                 ];
-            }
-
-            // Add divider between weeks (optional)
-            if ($weekData !== end($weeklyIssues)) {
-                $blocks[] = ['type' => 'divider'];
             }
         }
 

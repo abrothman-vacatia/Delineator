@@ -341,14 +341,14 @@ class PostWeeklyPrioritiesUnitTest extends TestCase
         $this->assertIsArray($blocks);
         $this->assertCount(2, $blocks); // Header + list
 
-        // First block should be rich_text header
+        // First block should be header
         $this->assertIsArray($blocks[0]);
         $headerBlock = $blocks[0];
-        $this->assertEquals('rich_text', $headerBlock['type']);
-        $this->assertArrayHasKey('elements', $headerBlock);
-        $this->assertIsArray($headerBlock['elements']);
-        $this->assertIsArray($headerBlock['elements'][0]);
-        $this->assertEquals('rich_text_section', $headerBlock['elements'][0]['type']);
+        $this->assertEquals('header', $headerBlock['type']);
+        $this->assertArrayHasKey('text', $headerBlock);
+        $this->assertIsArray($headerBlock['text']);
+        $this->assertEquals('plain_text', $headerBlock['text']['type']);
+        $this->assertEquals('2026-01-06', $headerBlock['text']['text']);
 
         // Second block should be rich_text ordered list
         $this->assertIsArray($blocks[1]);
