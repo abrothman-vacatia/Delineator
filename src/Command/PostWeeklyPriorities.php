@@ -195,13 +195,15 @@ class PostWeeklyPriorities extends Command
                         default => 100,
                     },
                     'stateSymbol' => match (isset($issue['state']) && is_array($issue['state']) && isset($issue['state']['name']) && is_string($issue['state']['name']) ? $issue['state']['name'] : '') {
-                        'Todo' => ':todo_linear:',
-                        'Pending' => ':blocked:',
-                        'In Progress' => ':in_progress_linear:',
-                        'In Review' => ':in_review_linear:',
-                        'Done' => ':done_linear:',
-                        'Canceled' => ':canceled_linear:',
-                        'Duplicate' => ':clown_face:',
+                        'Done' => 'done_linear',
+                        'In Review' => 'in_review_linear',
+                        'In Progress' => 'in_progress_linear',
+                        'Pending' => 'blocked',
+                        'Todo' => 'todo_linear',
+                        'Backlog' => 'backlog_linear',
+                        'Triage' => 'triage_linear',
+                        'Canceled' => 'canceled_linear',
+                        'Duplicate' => 'clown_face',
                         default => null,
                     },
                 ];
@@ -317,51 +319,84 @@ class PostWeeklyPriorities extends Command
         $blocks = [];
 
         foreach ($weeklyIssues as $weekData) {
-            // Add week header
+            // Add week header using rich_text block
             $blocks[] = [
-                'type' => 'section',
-                'text' => [
-                    'type' => 'mrkdwn',
-                    'text' => "*{$weekData['week']}*",
+                'type' => 'rich_text',
+                'elements' => [
+                    [
+                        'type' => 'rich_text_section',
+                        'elements' => [
+                            [
+                                'type' => 'text',
+                                'text' => $weekData['week'],
+                                'style' => ['bold' => true],
+                            ],
+                        ],
+                    ],
                 ],
             ];
 
-            // Add issues
-            $issuesList = [];
-            $count = 0;
+            // Build ordered list items for issues
+            $listItems = [];
             /** @var array<int, array<string, mixed>> $issues */
             $issues = $weekData['issues'];
             foreach ($issues as $issue) {
                 $stateSymbol = isset($issue['stateSymbol']) ? $issue['stateSymbol'] : null;
-                $symbol = is_string($stateSymbol) && '' !== $stateSymbol ? $stateSymbol.' ' : '';
-
                 $identifier = isset($issue['identifier']) && (is_string($issue['identifier']) || is_numeric($issue['identifier'])) ? (string) $issue['identifier'] : '';
                 $title = isset($issue['title']) && (is_string($issue['title']) || is_numeric($issue['title'])) ? (string) $issue['title'] : '';
 
-                $issuesList[] = sprintf(
-                    '%d. %s<%s|%s> - %s',
-                    ++$count,
-                    $symbol,
-                    'https://linear.app/vacatia/issue/'.$identifier.'/',
-                    $identifier,
-                    $title
-                );
+                // Build elements for this list item
+                $itemElements = [];
+
+                // Add state symbol emoji if present
+                if (is_string($stateSymbol) && '' !== $stateSymbol) {
+                    $itemElements[] = [
+                        'type' => 'emoji',
+                        'name' => $stateSymbol,
+                    ];
+                    $itemElements[] = [
+                        'type' => 'text',
+                        'text' => ' ',
+                    ];
+                }
+
+                // Add issue link
+                $itemElements[] = [
+                    'type' => 'link',
+                    'url' => 'https://linear.app/vacatia/issue/'.$identifier.'/',
+                    'text' => $identifier,
+                ];
+
+                // Add separator and title
+                $itemElements[] = [
+                    'type' => 'text',
+                    'text' => ' - '.$title,
+                ];
+
+                $listItems[] = [
+                    'type' => 'rich_text_section',
+                    'elements' => $itemElements,
+                ];
             }
 
-            if (!empty($issuesList)) {
+            // Add the ordered list if there are items
+            if (!empty($listItems)) {
                 $blocks[] = [
-                    'type' => 'section',
-                    'text' => [
-                        'type' => 'mrkdwn',
-                        'text' => implode("\n", $issuesList),
+                    'type' => 'rich_text',
+                    'elements' => [
+                        [
+                            'type' => 'rich_text_list',
+                            'style' => 'ordered',
+                            'elements' => $listItems,
+                        ],
                     ],
                 ];
             }
 
             // Add divider between weeks (optional)
-            //            if ($weekData !== end($weeklyIssues)) {
-            //                $blocks[] = ['type' => 'divider'];
-            //            }
+            if ($weekData !== end($weeklyIssues)) {
+                $blocks[] = ['type' => 'divider'];
+            }
         }
 
         return json_encode(['blocks' => $blocks]) ?: '{"blocks":[]}';

@@ -301,6 +301,96 @@ class PostWeeklyPrioritiesUnitTest extends TestCase
         $this->assertEquals(0, $mockHandler->count(), 'One request should have been made');
     }
 
+    public function testFormatIssuesForSlackUsesRichTextBlocks(): void
+    {
+        // Given: A command instance
+        $command = new PostWeeklyPriorities();
+
+        // And: Sample weekly issues data
+        $weeklyIssues = [
+            [
+                'week' => '2026-01-06',
+                'issues' => [
+                    [
+                        'identifier' => 'TEST-1',
+                        'title' => 'Test Issue',
+                        'stateSymbol' => 'done_linear',
+                    ],
+                    [
+                        'identifier' => 'TEST-2',
+                        'title' => 'Another Issue',
+                        'stateSymbol' => 'in_progress_linear',
+                    ],
+                ],
+            ],
+        ];
+
+        // When: Formatting for Slack
+        $reflectionClass = new \ReflectionClass(PostWeeklyPriorities::class);
+        $method = $reflectionClass->getMethod('formatIssuesForSlack');
+        $method->setAccessible(true);
+        $result = $method->invoke($command, $weeklyIssues);
+
+        // Then: Should return valid JSON
+        $this->assertIsString($result);
+        $decoded = json_decode($result, true);
+        $this->assertIsArray($decoded);
+        $this->assertArrayHasKey('blocks', $decoded);
+
+        $blocks = $decoded['blocks'];
+        $this->assertIsArray($blocks);
+        $this->assertCount(2, $blocks); // Header + list
+
+        // First block should be rich_text header
+        $this->assertIsArray($blocks[0]);
+        $headerBlock = $blocks[0];
+        $this->assertEquals('rich_text', $headerBlock['type']);
+        $this->assertArrayHasKey('elements', $headerBlock);
+        $this->assertIsArray($headerBlock['elements']);
+        $this->assertIsArray($headerBlock['elements'][0]);
+        $this->assertEquals('rich_text_section', $headerBlock['elements'][0]['type']);
+
+        // Second block should be rich_text ordered list
+        $this->assertIsArray($blocks[1]);
+        $listBlock = $blocks[1];
+        $this->assertEquals('rich_text', $listBlock['type']);
+        $this->assertArrayHasKey('elements', $listBlock);
+        $this->assertIsArray($listBlock['elements']);
+        $this->assertIsArray($listBlock['elements'][0]);
+        $this->assertEquals('rich_text_list', $listBlock['elements'][0]['type']);
+        $this->assertEquals('ordered', $listBlock['elements'][0]['style']);
+
+        // Should have 2 list items
+        $this->assertArrayHasKey('elements', $listBlock['elements'][0]);
+        $this->assertIsArray($listBlock['elements'][0]['elements']);
+        $listItems = $listBlock['elements'][0]['elements'];
+        $this->assertCount(2, $listItems);
+
+        // First item should contain emoji and link
+        $this->assertIsArray($listItems[0]);
+        $firstItem = $listItems[0];
+        $this->assertEquals('rich_text_section', $firstItem['type']);
+        $this->assertArrayHasKey('elements', $firstItem);
+        $this->assertIsArray($firstItem['elements']);
+        $itemElements = $firstItem['elements'];
+
+        // Should have emoji, space, link, and text elements
+        $this->assertIsArray($itemElements[0]);
+        $this->assertEquals('emoji', $itemElements[0]['type']);
+        $this->assertEquals('done_linear', $itemElements[0]['name']);
+        $this->assertIsArray($itemElements[1]);
+        $this->assertEquals('text', $itemElements[1]['type']);
+        $this->assertEquals(' ', $itemElements[1]['text']);
+        $this->assertIsArray($itemElements[2]);
+        $this->assertEquals('link', $itemElements[2]['type']);
+        $this->assertEquals('TEST-1', $itemElements[2]['text']);
+        $this->assertIsString($itemElements[2]['url']);
+        $this->assertStringContainsString('TEST-1', $itemElements[2]['url']);
+        $this->assertIsArray($itemElements[3]);
+        $this->assertEquals('text', $itemElements[3]['type']);
+        $this->assertEquals(' - Test Issue', $itemElements[3]['text']);
+    }
+
     public function testMissingEnvironmentVariablesReturnError(): void
     {
         // Given: No environment variables
