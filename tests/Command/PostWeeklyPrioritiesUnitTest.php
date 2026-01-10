@@ -283,7 +283,7 @@ class PostWeeklyPrioritiesUnitTest extends TestCase
         $command = new PostWeeklyPriorities($mockClient);
 
         $application = new Application();
-        $application->add($command);
+        $application->addCommand($command);
 
         $commandTester = new CommandTester($command);
 
@@ -402,7 +402,7 @@ class PostWeeklyPrioritiesUnitTest extends TestCase
         $command = new PostWeeklyPriorities();
 
         $application = new Application();
-        $application->add($command);
+        $application->addCommand($command);
 
         $commandTester = new CommandTester($command);
 
