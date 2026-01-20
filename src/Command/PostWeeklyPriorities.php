@@ -127,6 +127,19 @@ class PostWeeklyPriorities extends Command
                   name
                   position
                 }
+                inverseRelations {
+                  nodes {
+                    type
+                    issue {
+                      identifier
+                      title
+                      url
+                      state {
+                        name
+                      }
+                    }
+                  }
+                }
               }
             }
           }
@@ -169,29 +182,18 @@ class PostWeeklyPriorities extends Command
             /** @param array<string, mixed> $issue
              * @return array<string, mixed>
              */
-            fn(array $issue): array => [
-                'id' => $issue['id'],
-                'identifier' => $issue['identifier'],
-                'title' => $issue['title'],
-                'url' => $issue['url'],
-                'estimate' => $issue['estimate'] ?? null,
-                'priority' => $issue['priority'],
-                'createdAt' => isset($issue['createdAt']) && is_string($issue['createdAt']) ? new \DateTimeImmutable($issue['createdAt'])->format('Y-m-d H:i:s') : null,
-                'completedAt' => isset($issue['completedAt']) && is_string($issue['completedAt']) ? new \DateTimeImmutable($issue['completedAt'])->format('Y-m-d H:i:s') : null,
-                'stateName' => isset($issue['state']) && is_array($issue['state']) && isset($issue['state']['name']) && is_string($issue['state']['name']) ? $issue['state']['name'] : '',
-                'statePosition__c' => match (isset($issue['state']) && is_array($issue['state']) && isset($issue['state']['name']) && is_string($issue['state']['name']) ? $issue['state']['name'] : '') {
-                    'Done' => 0,
-                    'In Review' => 1,
-                    'In Progress' => 2,
-                    'Pending' => 3,
-                    'Todo' => 4,
-                    'Backlog' => 5,
-                    'Triage' => 6,
-                    'Canceled' => 8,
-                    'Duplicate' => 9,
-                    default => 100,
-                },
-                'stateSymbol' => match (isset($issue['state']) && is_array($issue['state']) && isset($issue['state']['name']) && is_string($issue['state']['name']) ? $issue['state']['name'] : '') {
+            function (array $issue): array {
+                $blockedBy = array_filter(
+                    $issue['inverseRelations']['nodes'] ?? [],
+                    fn ($rel) => 'blocks' === $rel['type']
+                        && isset($rel['issue']['state']['name'])
+                        && !in_array($rel['issue']['state']['name'], ['Done', 'Canceled', 'Duplicate'], true)
+                );
+
+                $stateName = isset($issue['state']) && is_array($issue['state']) && isset($issue['state']['name']) && is_string($issue['state']['name']) ? $issue['state']['name'] : '';
+
+                // Determine state symbol - if blocked, use 'blocked' regardless of actual state
+                $stateSymbol = !empty($blockedBy) ? 'blocked' : match ($stateName) {
                     'Done' => 'done_linear',
                     'In Review' => 'in_review_linear',
                     'In Progress' => 'in_progress_linear',
@@ -202,8 +204,34 @@ class PostWeeklyPriorities extends Command
                     'Canceled' => 'canceled_linear',
                     'Duplicate' => 'clown_face',
                     default => null,
-                },
-            ],
+                };
+
+                return [
+                    'id' => $issue['id'],
+                    'identifier' => $issue['identifier'],
+                    'title' => $issue['title'],
+                    'url' => $issue['url'],
+                    'estimate' => $issue['estimate'] ?? null,
+                    'priority' => $issue['priority'],
+                    'createdAt' => isset($issue['createdAt']) && is_string($issue['createdAt']) ? new \DateTimeImmutable($issue['createdAt'])->format('Y-m-d H:i:s') : null,
+                    'completedAt' => isset($issue['completedAt']) && is_string($issue['completedAt']) ? new \DateTimeImmutable($issue['completedAt'])->format('Y-m-d H:i:s') : null,
+                    'stateName' => $stateName,
+                    'statePosition__c' => match ($stateName) {
+                        'Done' => 0,
+                        'In Review' => 1,
+                        'In Progress' => 2,
+                        'Pending' => 3,
+                        'Todo' => 4,
+                        'Backlog' => 5,
+                        'Triage' => 6,
+                        'Canceled' => 8,
+                        'Duplicate' => 9,
+                        default => 100,
+                    },
+                    'stateSymbol' => $stateSymbol,
+                    'blockedBy' => $blockedBy,
+                ];
+            },
             $nodes
         );
 
@@ -365,6 +393,77 @@ class PostWeeklyPriorities extends Command
                     'type' => 'rich_text_section',
                     'elements' => $itemElements,
                 ];
+
+                // Add blocking issues as indented sub-items if present
+                if (!empty($issue['blockedBy'])) {
+                    foreach ($issue['blockedBy'] as $blockingRel) {
+                        if (isset($blockingRel['issue'])) {
+                            $blockingIssue = $blockingRel['issue'];
+                            $blockingIdentifier = $blockingIssue['identifier'] ?? '';
+                            $blockingTitle = $blockingIssue['title'] ?? '';
+                            $blockingState = $blockingIssue['state']['name'] ?? '';
+
+                            // Determine state symbol for blocking issue
+                            $blockingStateSymbol = match ($blockingState) {
+                                'Done' => 'done_linear',
+                                'In Review' => 'in_review_linear',
+                                'In Progress' => 'in_progress_linear',
+                                'Pending' => 'blocked',
+                                'Todo' => 'todo_linear',
+                                'Backlog' => 'backlog_linear',
+                                'Triage' => 'triage_linear',
+                                'Canceled' => 'canceled_linear',
+                                'Duplicate' => 'clown_face',
+                                default => null,
+                            };
+
+                            // Build elements for the blocking issue sub-item
+                            $blockingElements = [];
+
+                            // Add indentation and arrow to show this is a blocker
+                            $blockingElements[] = [
+                                'type' => 'text',
+                                'text' => '    ↳ Blocked by: ',
+                                'style' => [
+                                    'italic' => true,
+                                ],
+                            ];
+
+                            // Add state symbol emoji if present
+                            if (is_string($blockingStateSymbol) && '' !== $blockingStateSymbol) {
+                                $blockingElements[] = [
+                                    'type' => 'emoji',
+                                    'name' => $blockingStateSymbol,
+                                ];
+                                $blockingElements[] = [
+                                    'type' => 'text',
+                                    'text' => ' ',
+                                ];
+                            }
+
+                            // Add blocking issue link
+                            $blockingElements[] = [
+                                'type' => 'link',
+                                'url' => $blockingIssue['url'] ?? 'https://linear.app/vacatia/issue/'.$blockingIdentifier.'/',
+                                'text' => $blockingIdentifier,
+                            ];
+
+                            // Add title and state
+                            $blockingElements[] = [
+                                'type' => 'text',
+                                'text' => ' - '.$blockingTitle,
+                                'style' => [
+                                    'italic' => true,
+                                ],
+                            ];
+
+                            $listItems[] = [
+                                'type' => 'rich_text_section',
+                                'elements' => $blockingElements,
+                            ];
+                        }
+                    }
+                }
             }
 
             // Add the ordered list if there are items
