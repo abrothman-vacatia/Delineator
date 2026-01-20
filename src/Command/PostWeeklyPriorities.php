@@ -112,7 +112,7 @@ class PostWeeklyPriorities extends Command
           viewer {
             id
             name
-            assignedIssues(first: 100, orderBy: updatedAt) {
+            assignedIssues(first: 50, orderBy: updatedAt) {
               nodes {
                 id
                 completedAt
@@ -193,7 +193,7 @@ class PostWeeklyPriorities extends Command
                 $stateName = isset($issue['state']) && is_array($issue['state']) && isset($issue['state']['name']) && is_string($issue['state']['name']) ? $issue['state']['name'] : '';
 
                 // Determine state symbol - if blocked, use 'blocked' regardless of actual state
-                $stateSymbol = !empty($blockedBy) ? 'blocked' : match ($stateName) {
+                $stateSymbol = !empty($blockedBy) ? 'blocked_linear' : match ($stateName) {
                     'Done' => 'done_linear',
                     'In Review' => 'in_review_linear',
                     'In Progress' => 'in_progress_linear',
@@ -352,11 +352,14 @@ class PostWeeklyPriorities extends Command
                 ],
             ];
 
-            // Build ordered list items for issues
-            $listItems = [];
+            // Build the rich text block with multiple list types
+            $richTextElements = [];
+            $orderedListItems = [];
+            $issueCounter = 0;
+
             /** @var array<int, array<string, mixed>> $issues */
             $issues = $weekData['issues'];
-            foreach ($issues as $issue) {
+            foreach ($issues as $index => $issue) {
                 $stateSymbol = $issue['stateSymbol'] ?? null;
                 $identifier = isset($issue['identifier']) && (is_string($issue['identifier']) || is_numeric($issue['identifier'])) ? (string) $issue['identifier'] : '';
                 $title = isset($issue['title']) && (is_string($issue['title']) || is_numeric($issue['title'])) ? (string) $issue['title'] : '';
@@ -389,13 +392,29 @@ class PostWeeklyPriorities extends Command
                     'text' => ' - '.$title,
                 ];
 
-                $listItems[] = [
+                $orderedListItems[] = [
                     'type' => 'rich_text_section',
                     'elements' => $itemElements,
                 ];
+                $issueCounter++;
 
-                // Add blocking issues as indented sub-items if present
+                // Check if this issue has blockers
                 if (!empty($issue['blockedBy'])) {
+                    // Add the current ordered list to the rich text elements
+                    if (!empty($orderedListItems)) {
+                        $richTextElements[] = [
+                            'type' => 'rich_text_list',
+                            'style' => 'ordered',
+                            'indent' => 0,
+                            'border' => 0,
+                            'elements' => $orderedListItems,
+                            'offset' => $issueCounter - count($orderedListItems),
+                        ];
+                        $orderedListItems = [];
+                    }
+
+                    // Create bullet list for blockers
+                    $bulletListItems = [];
                     foreach ($issue['blockedBy'] as $blockingRel) {
                         if (isset($blockingRel['issue'])) {
                             $blockingIssue = $blockingRel['issue'];
@@ -417,16 +436,12 @@ class PostWeeklyPriorities extends Command
                                 default => null,
                             };
 
-                            // Build elements for the blocking issue sub-item
+                            // Build elements for the blocking issue
                             $blockingElements = [];
 
-                            // Add indentation and arrow to show this is a blocker
                             $blockingElements[] = [
                                 'type' => 'text',
-                                'text' => '    ↳ Blocked by: ',
-                                'style' => [
-                                    'italic' => true,
-                                ],
+                                'text' => 'blocked by ',
                             ];
 
                             // Add state symbol emoji if present
@@ -448,7 +463,7 @@ class PostWeeklyPriorities extends Command
                                 'text' => $blockingIdentifier,
                             ];
 
-                            // Add title and state
+                            // Add title with italic style
                             $blockingElements[] = [
                                 'type' => 'text',
                                 'text' => ' - '.$blockingTitle,
@@ -457,26 +472,43 @@ class PostWeeklyPriorities extends Command
                                 ],
                             ];
 
-                            $listItems[] = [
+                            $bulletListItems[] = [
                                 'type' => 'rich_text_section',
                                 'elements' => $blockingElements,
                             ];
                         }
                     }
+
+                    // Add the bullet list for blockers
+                    if (!empty($bulletListItems)) {
+                        $richTextElements[] = [
+                            'type' => 'rich_text_list',
+                            'style' => 'bullet',
+                            'indent' => 1,
+                            'border' => 0,
+                            'elements' => $bulletListItems,
+                        ];
+                    }
                 }
             }
 
-            // Add the ordered list if there are items
-            if (!empty($listItems)) {
+            // Add any remaining ordered list items
+            if (!empty($orderedListItems)) {
+                $richTextElements[] = [
+                    'type' => 'rich_text_list',
+                    'style' => 'ordered',
+                    'indent' => 0,
+                    'border' => 0,
+                    'elements' => $orderedListItems,
+                    'offset' => $issueCounter - count($orderedListItems),
+                ];
+            }
+
+            // Add the rich text block if there are elements
+            if (!empty($richTextElements)) {
                 $blocks[] = [
                     'type' => 'rich_text',
-                    'elements' => [
-                        [
-                            'type' => 'rich_text_list',
-                            'style' => 'ordered',
-                            'elements' => $listItems,
-                        ],
-                    ],
+                    'elements' => $richTextElements,
                 ];
             }
         }
