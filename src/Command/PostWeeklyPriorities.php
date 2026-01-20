@@ -57,7 +57,7 @@ class PostWeeklyPriorities extends Command
             return Command::FAILURE;
         }
 
-        if (!$this->httpClient) {
+        if (!$this->httpClient instanceof \GuzzleHttp\Client) {
             $this->httpClient = new Client();
         }
 
@@ -290,7 +290,7 @@ class PostWeeklyPriorities extends Command
                 $stateName = isset($issue['state']) && is_array($issue['state']) && isset($issue['state']['name']) && is_string($issue['state']['name']) ? $issue['state']['name'] : '';
 
                 // Determine state symbol - if blocked, use 'blocked' regardless of actual state
-                $stateSymbol = !empty($blockedBy) ? 'blocked_linear' : match ($stateName) {
+                $stateSymbol = $blockedBy === [] ? match ($stateName) {
                     'Done' => 'done_linear',
                     'In Review' => 'in_review_linear',
                     'In Progress' => 'in_progress_linear',
@@ -301,7 +301,7 @@ class PostWeeklyPriorities extends Command
                     'Canceled' => 'canceled_linear',
                     'Duplicate' => 'clown_face',
                     default => null,
-                };
+                } : 'blocked_linear';
 
                 return [
                     'id' => $issue['id'],
@@ -336,7 +336,7 @@ class PostWeeklyPriorities extends Command
         $lastMonday = new \DateTimeImmutable('monday last week');
         $thisMonday = new \DateTimeImmutable('monday this week');
         $lastSunday = $thisMonday->modify('-1 second');
-        $now = new \DateTimeImmutable('now');
+        new \DateTimeImmutable('now');
 
         // Format week labels
         $lastWeekLabel = $lastMonday->format('Y-m-d');
@@ -348,7 +348,7 @@ class PostWeeklyPriorities extends Command
         // Filter issues for last week (completed only)
         $lastWeekIssues = array_filter(
             $allIssues,
-            function ($issue) use ($lastMonday, $lastSunday) {
+            function (array $issue) use ($lastMonday, $lastSunday): bool {
                 if (!isset($issue['completedAt']) || !is_string($issue['completedAt'])) {
                     return false;
                 }
@@ -361,7 +361,7 @@ class PostWeeklyPriorities extends Command
         // Filter issues for this week (active states only, excluding completed before this week)
         $thisWeekIssues = array_filter(
             $allIssues,
-            function ($issue) use ($activeStates, $thisMonday) {
+            function (array $issue) use ($activeStates, $thisMonday): bool {
                 // Check if it's in an active state
                 if (!in_array($issue['stateName'], $activeStates, true)) {
                     return false;
@@ -382,23 +382,23 @@ class PostWeeklyPriorities extends Command
         // Sort function for issues
         $sortIssues = function (array $a, array $b): int {
             $statePositionDiff = $a['statePosition__c'] <=> $b['statePosition__c'];
-            if ($statePositionDiff) {
+            if ($statePositionDiff !== 0) {
                 return $statePositionDiff;
             }
 
             $estimateDiff = $b['estimate'] <=> $a['estimate'];
-            if ($estimateDiff) {
+            if ($estimateDiff !== 0) {
                 return $estimateDiff;
             }
 
             $priorityDiff = $a['priority'] <=> $b['priority'];
-            if ($priorityDiff) {
+            if ($priorityDiff !== 0) {
                 return $priorityDiff;
             }
 
             if (isset($a['completedAt']) || isset($b['completedAt'])) {
                 $completedAtDiff = $a['completedAt'] <=> $b['completedAt'];
-                if ($completedAtDiff) {
+                if ($completedAtDiff !== 0) {
                     return $completedAtDiff;
                 }
             }
@@ -414,7 +414,7 @@ class PostWeeklyPriorities extends Command
         $weeklyIssues = [];
 
         // Add last week if there are issues
-        if (!empty($lastWeekIssues)) {
+        if ($lastWeekIssues !== []) {
             $weeklyIssues[] = [
                 'week' => $lastWeekLabel,
                 'issues' => $lastWeekIssues,
@@ -422,7 +422,7 @@ class PostWeeklyPriorities extends Command
         }
 
         // Add this week if there are issues
-        if (!empty($thisWeekIssues)) {
+        if ($thisWeekIssues !== []) {
             $weeklyIssues[] = [
                 'week' => $thisWeekLabel,
                 'issues' => $thisWeekIssues,
@@ -584,7 +584,7 @@ class PostWeeklyPriorities extends Command
                     }
 
                     // Add the bullet list for blockers
-                    if (!empty($bulletListItems)) {
+                    if ($bulletListItems !== []) {
                         $richTextElements[] = [
                             'type' => 'rich_text_list',
                             'style' => 'bullet',
@@ -597,7 +597,7 @@ class PostWeeklyPriorities extends Command
             }
 
             // Add any remaining ordered list items
-            if (!empty($orderedListItems)) {
+            if ($orderedListItems !== []) {
                 $richTextElements[] = [
                     'type' => 'rich_text_list',
                     'style' => 'ordered',
@@ -609,7 +609,7 @@ class PostWeeklyPriorities extends Command
             }
 
             // Add the rich text block if there are elements
-            if (!empty($richTextElements)) {
+            if ($richTextElements !== []) {
                 $blocks[] = [
                     'type' => 'rich_text',
                     'elements' => $richTextElements,
@@ -648,7 +648,7 @@ class PostWeeklyPriorities extends Command
         $data = json_decode($response->getBody()->getContents(), true) ?: [];
 
         if (empty($data['ok'])) {
-            $error = isset($data['error']) ? (string) $data['error'] : 'Unknown error';
+            $error = $data['error'] ?? 'Unknown error';
             throw new \RuntimeException('Failed to get channel history: '.$error);
         }
 
@@ -656,11 +656,9 @@ class PostWeeklyPriorities extends Command
         foreach ($data['messages'] ?? [] as $message) {
             $text = strtolower($message['text'] ?? '');
             foreach ($searchPatterns as $pattern) {
-                if (str_contains($text, $pattern)) {
-                    // Check if this is a parent message (not a reply)
-                    if (!isset($message['thread_ts']) || $message['thread_ts'] === $message['ts']) {
-                        return $message['ts'];
-                    }
+                // Check if this is a parent message (not a reply)
+                if (str_contains($text, $pattern) && (!isset($message['thread_ts']) || $message['thread_ts'] === $message['ts'])) {
+                    return $message['ts'];
                 }
             }
         }
@@ -692,7 +690,7 @@ class PostWeeklyPriorities extends Command
         $data = json_decode($response->getBody()->getContents(), true) ?: [];
 
         if (empty($data['ok'])) {
-            $error = isset($data['error']) ? (string) $data['error'] : 'Unknown error';
+            $error = $data['error'] ?? 'Unknown error';
             throw new \RuntimeException('Failed to post to Slack: '.$error);
         }
 
