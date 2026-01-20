@@ -193,25 +193,43 @@ class PostWeeklyPriorities extends Command
         $lastWeekData = $this->executeGraphQLQuery($lastWeekQuery);
         $thisWeekData = $this->executeGraphQLQuery($thisWeekQuery);
 
-        if (!isset($lastWeekData['data']['viewer']) || !isset($thisWeekData['data']['viewer'])) {
+        if (!isset($lastWeekData['data']) || !is_array($lastWeekData['data']) || !isset($lastWeekData['data']['viewer'])) {
+            throw new \RuntimeException('No user data found from Linear API.');
+        }
+        if (!isset($thisWeekData['data']) || !is_array($thisWeekData['data']) || !isset($thisWeekData['data']['viewer'])) {
             throw new \RuntimeException('No user data found from Linear API.');
         }
 
+        /** @var array<string, mixed> $lastWeekDataArray */
+        $lastWeekDataArray = $lastWeekData['data'];
+        /** @var array<string, mixed> $thisWeekDataArray */
+        $thisWeekDataArray = $thisWeekData['data'];
+        /** @var array<string, mixed> $lastWeekViewer */
+        $lastWeekViewer = $lastWeekDataArray['viewer'];
+        /** @var array<string, mixed> $thisWeekViewer */
+        $thisWeekViewer = $thisWeekDataArray['viewer'];
+
         // Combine both result sets into one user array
+        $lastWeekAssignedIssues = is_array($lastWeekViewer['assignedIssues'] ?? null) ? $lastWeekViewer['assignedIssues'] : [];
+        $thisWeekAssignedIssues = is_array($thisWeekViewer['assignedIssues'] ?? null) ? $thisWeekViewer['assignedIssues'] : [];
+        
+        $lastWeekNodes = is_array($lastWeekAssignedIssues['nodes'] ?? null) ? $lastWeekAssignedIssues['nodes'] : [];
+        $thisWeekNodes = is_array($thisWeekAssignedIssues['nodes'] ?? null) ? $thisWeekAssignedIssues['nodes'] : [];
+        
         $combinedUser = [
-            'id' => $thisWeekData['data']['viewer']['id'],
-            'name' => $thisWeekData['data']['viewer']['name'],
+            'id' => $thisWeekViewer['id'] ?? '',
+            'name' => $thisWeekViewer['name'] ?? '',
             'assignedIssues' => [
-                'nodes' => array_merge(
-                    $lastWeekData['data']['viewer']['assignedIssues']['nodes'] ?? [],
-                    $thisWeekData['data']['viewer']['assignedIssues']['nodes'] ?? []
-                )
-            ]
+                'nodes' => array_merge($lastWeekNodes, $thisWeekNodes),
+            ],
         ];
 
         return $this->processLinearData($combinedUser);
     }
 
+    /**
+     * @return array<string, mixed>
+     */
     private function executeGraphQLQuery(string $query): array
     {
         $body = json_encode(['query' => $query]);
@@ -247,11 +265,26 @@ class PostWeeklyPriorities extends Command
              * @return array<string, mixed>
              */
             function (array $issue): array {
+                $inverseRelationsData = is_array($issue['inverseRelations'] ?? null) ? $issue['inverseRelations'] : [];
+                /** @var array<int, array<string, mixed>> $inverseRelations */
+                $inverseRelations = is_array($inverseRelationsData['nodes'] ?? null) ? $inverseRelationsData['nodes'] : [];
                 $blockedBy = array_filter(
-                    $issue['inverseRelations']['nodes'] ?? [],
-                    fn ($rel) => 'blocks' === $rel['type']
-                        && isset($rel['issue']['state']['name'])
-                        && !in_array($rel['issue']['state']['name'], ['Done', 'Canceled', 'Duplicate'], true)
+                    $inverseRelations,
+                    /** @param array<string, mixed> $rel */
+                    function (array $rel): bool {
+                        $relIssue = $rel['issue'] ?? null;
+                        if (!is_array($relIssue)) {
+                            return false;
+                        }
+
+                        $relState = $relIssue['state'] ?? null;
+                        if (!is_array($relState) || !isset($relState['name'])) {
+                            return false;
+                        }
+
+                        return 'blocks' === ($rel['type'] ?? '')
+                            && !in_array($relState['name'], ['Done', 'Canceled', 'Duplicate'], true);
+                    }
                 );
 
                 $stateName = isset($issue['state']) && is_array($issue['state']) && isset($issue['state']['name']) && is_string($issue['state']['name']) ? $issue['state']['name'] : '';
@@ -423,7 +456,7 @@ class PostWeeklyPriorities extends Command
 
             /** @var array<int, array<string, mixed>> $issues */
             $issues = $weekData['issues'];
-            foreach ($issues as $index => $issue) {
+            foreach ($issues as $issue) {
                 $stateSymbol = $issue['stateSymbol'] ?? null;
                 $identifier = isset($issue['identifier']) && (is_string($issue['identifier']) || is_numeric($issue['identifier'])) ? (string) $issue['identifier'] : '';
                 $title = isset($issue['title']) && (is_string($issue['title']) || is_numeric($issue['title'])) ? (string) $issue['title'] : '';
@@ -463,84 +496,91 @@ class PostWeeklyPriorities extends Command
                 ++$issueCounter;
 
                 // Check if this issue has blockers
-                if (!empty($issue['blockedBy'])) {
+                if (!empty($issue['blockedBy']) && is_array($issue['blockedBy'])) {
                     // Add the current ordered list to the rich text elements
-                    if (!empty($orderedListItems)) {
-                        $richTextElements[] = [
-                            'type' => 'rich_text_list',
-                            'style' => 'ordered',
-                            'indent' => 0,
-                            'border' => 0,
-                            'elements' => $orderedListItems,
-                            'offset' => $issueCounter - count($orderedListItems),
-                        ];
-                        $orderedListItems = [];
-                    }
+                    $richTextElements[] = [
+                        'type' => 'rich_text_list',
+                        'style' => 'ordered',
+                        'indent' => 0,
+                        'border' => 0,
+                        'elements' => $orderedListItems,
+                        'offset' => $issueCounter - count($orderedListItems),
+                    ];
+                    $orderedListItems = [];
 
                     // Create bullet list for blockers
                     $bulletListItems = [];
-                    foreach ($issue['blockedBy'] as $blockingRel) {
-                        if (isset($blockingRel['issue'])) {
-                            $blockingIssue = $blockingRel['issue'];
-                            $blockingIdentifier = $blockingIssue['identifier'] ?? '';
-                            $blockingTitle = $blockingIssue['title'] ?? '';
-                            $blockingState = $blockingIssue['state']['name'] ?? '';
+                    /** @var array<int, array<string, mixed>> $blockedByArray */
+                    $blockedByArray = $issue['blockedBy'];
+                    foreach ($blockedByArray as $blockingRel) {
+                        if (!isset($blockingRel['issue']) || !is_array($blockingRel['issue'])) {
+                            continue;
+                        }
+                        /** @var array<string, mixed> $blockingIssue */
+                        $blockingIssue = $blockingRel['issue'];
+                        $rawIdentifier = $blockingIssue['identifier'] ?? '';
+                        $blockingIdentifier = is_scalar($rawIdentifier) ? (string) $rawIdentifier : '';
+                        $rawTitle = $blockingIssue['title'] ?? '';
+                        $blockingTitle = is_scalar($rawTitle) ? (string) $rawTitle : '';
+                        $blockingStateArray = $blockingIssue['state'] ?? [];
+                        $blockingState = is_array($blockingStateArray) && is_string($blockingStateArray['name'] ?? '') ? $blockingStateArray['name'] : '';
 
-                            // Determine state symbol for blocking issue
-                            $blockingStateSymbol = match ($blockingState) {
-                                'Done' => 'done_linear',
-                                'In Review' => 'in_review_linear',
-                                'In Progress' => 'in_progress_linear',
-                                'Pending' => 'blocked',
-                                'Todo' => 'todo_linear',
-                                'Backlog' => 'backlog_linear',
-                                'Triage' => 'triage_linear',
-                                'Canceled' => 'canceled_linear',
-                                'Duplicate' => 'clown_face',
-                                default => null,
-                            };
+                        // Determine state symbol for blocking issue
+                        $blockingStateSymbol = match ($blockingState) {
+                            'Done' => 'done_linear',
+                            'In Review' => 'in_review_linear',
+                            'In Progress' => 'in_progress_linear',
+                            'Pending' => 'blocked',
+                            'Todo' => 'todo_linear',
+                            'Backlog' => 'backlog_linear',
+                            'Triage' => 'triage_linear',
+                            'Canceled' => 'canceled_linear',
+                            'Duplicate' => 'clown_face',
+                            default => null,
+                        };
 
-                            // Build elements for the blocking issue
-                            $blockingElements = [];
+                        // Build elements for the blocking issue
+                        $blockingElements = [];
 
+                        $blockingElements[] = [
+                            'type' => 'text',
+                            'text' => 'blocked by ',
+                        ];
+
+                        // Add state symbol emoji if present
+                        if (null !== $blockingStateSymbol) {
+                            $blockingElements[] = [
+                                'type' => 'emoji',
+                                'name' => $blockingStateSymbol,
+                            ];
                             $blockingElements[] = [
                                 'type' => 'text',
-                                'text' => 'blocked by ',
-                            ];
-
-                            // Add state symbol emoji if present
-                            if (is_string($blockingStateSymbol) && '' !== $blockingStateSymbol) {
-                                $blockingElements[] = [
-                                    'type' => 'emoji',
-                                    'name' => $blockingStateSymbol,
-                                ];
-                                $blockingElements[] = [
-                                    'type' => 'text',
-                                    'text' => ' ',
-                                ];
-                            }
-
-                            // Add blocking issue link
-                            $blockingElements[] = [
-                                'type' => 'link',
-                                'url' => $blockingIssue['url'] ?? 'https://linear.app/vacatia/issue/'.$blockingIdentifier.'/',
-                                'text' => $blockingIdentifier,
-                            ];
-
-                            // Add title with italic style
-                            $blockingElements[] = [
-                                'type' => 'text',
-                                'text' => ' - '.$blockingTitle,
-                                'style' => [
-                                    'italic' => true,
-                                ],
-                            ];
-
-                            $bulletListItems[] = [
-                                'type' => 'rich_text_section',
-                                'elements' => $blockingElements,
+                                'text' => ' ',
                             ];
                         }
+
+                        // Add blocking issue link
+                        $rawUrl = $blockingIssue['url'] ?? null;
+                        $blockingUrl = is_string($rawUrl) ? $rawUrl : 'https://linear.app/vacatia/issue/'.$blockingIdentifier.'/';
+                        $blockingElements[] = [
+                            'type' => 'link',
+                            'url' => $blockingUrl,
+                            'text' => $blockingIdentifier,
+                        ];
+
+                        // Add title with italic style
+                        $blockingElements[] = [
+                            'type' => 'text',
+                            'text' => ' - '.$blockingTitle,
+                            'style' => [
+                                'italic' => true,
+                            ],
+                        ];
+
+                        $bulletListItems[] = [
+                            'type' => 'rich_text_section',
+                            'elements' => $blockingElements,
+                        ];
                     }
 
                     // Add the bullet list for blockers
