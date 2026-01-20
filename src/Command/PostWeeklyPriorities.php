@@ -107,12 +107,55 @@ class PostWeeklyPriorities extends Command
      */
     private function fetchLinearIssues(): array
     {
-        $issuesQuery = <<<'GRAPHQL'
+        // Calculate week boundary for query 1
+        $lastMonday = new \DateTimeImmutable('monday last week');
+
+        // Query 1: Issues completed since last Monday (w/o inverseRelations)
+        $lastWeekQuery = <<<GRAPHQL
         query {
           viewer {
             id
             name
-            assignedIssues(first: 50, orderBy: updatedAt) {
+            assignedIssues(
+              first: 100,
+              filter: {
+                completedAt: { gte: "{$lastMonday->format('Y-m-d\TH:i:s.v\Z')}" }
+              },
+              orderBy: updatedAt
+            ) {
+              nodes {
+                id
+                completedAt
+                createdAt
+                updatedAt
+                estimate
+                identifier
+                priority
+                title
+                url
+                state {
+                  name
+                  position
+                }
+              }
+            }
+          }
+        }
+        GRAPHQL;
+
+        // Query 2: Active issues (w/ inverseRelations for blocking info)
+        $thisWeekQuery = <<<'GRAPHQL'
+        query {
+          viewer {
+            id
+            name
+            assignedIssues(
+              first: 50,
+              filter: {
+                state: { name: { in: ["Todo", "In Progress", "In Review"] } }
+              },
+              orderBy: updatedAt
+            ) {
               nodes {
                 id
                 completedAt
@@ -146,7 +189,32 @@ class PostWeeklyPriorities extends Command
         }
         GRAPHQL;
 
-        $body = json_encode(['query' => $issuesQuery]);
+        // Execute both queries
+        $lastWeekData = $this->executeGraphQLQuery($lastWeekQuery);
+        $thisWeekData = $this->executeGraphQLQuery($thisWeekQuery);
+
+        if (!isset($lastWeekData['data']['viewer']) || !isset($thisWeekData['data']['viewer'])) {
+            throw new \RuntimeException('No user data found from Linear API.');
+        }
+
+        // Combine both result sets into one user array
+        $combinedUser = [
+            'id' => $thisWeekData['data']['viewer']['id'],
+            'name' => $thisWeekData['data']['viewer']['name'],
+            'assignedIssues' => [
+                'nodes' => array_merge(
+                    $lastWeekData['data']['viewer']['assignedIssues']['nodes'] ?? [],
+                    $thisWeekData['data']['viewer']['assignedIssues']['nodes'] ?? []
+                )
+            ]
+        ];
+
+        return $this->processLinearData($combinedUser);
+    }
+
+    private function executeGraphQLQuery(string $query): array
+    {
+        $body = json_encode(['query' => $query]);
         assert($this->httpClient instanceof Client);
         $response = $this->httpClient->request('POST', 'https://api.linear.app/graphql', [
             'headers' => [
@@ -159,11 +227,7 @@ class PostWeeklyPriorities extends Command
         /** @var array{data?: array{viewer?: array<string, mixed>}} $data */
         $data = json_decode($response->getBody()->getContents(), true) ?: [];
 
-        if (!isset($data['data']['viewer'])) {
-            throw new \RuntimeException('No user data found from Linear API.');
-        }
-
-        return $this->processLinearData($data['data']['viewer']);
+        return $data;
     }
 
     /**
@@ -396,7 +460,7 @@ class PostWeeklyPriorities extends Command
                     'type' => 'rich_text_section',
                     'elements' => $itemElements,
                 ];
-                $issueCounter++;
+                ++$issueCounter;
 
                 // Check if this issue has blockers
                 if (!empty($issue['blockedBy'])) {
