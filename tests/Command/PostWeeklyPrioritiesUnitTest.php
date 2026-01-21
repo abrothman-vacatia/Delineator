@@ -250,8 +250,21 @@ class PostWeeklyPrioritiesUnitTest extends TestCase
 
     public function testDryRunDoesNotMakeHttpCalls(): void
     {
-        // Given: A mock handler that will throw if called
+        // Given: Mock handlers for two Linear API calls (last week and this week)
         $mockHandler = new MockHandler([
+            // Response for last week query
+            new Response(200, [], (string) json_encode([
+                'data' => [
+                    'viewer' => [
+                        'id' => 'test-user',
+                        'name' => 'Test User',
+                        'assignedIssues' => [
+                            'nodes' => [],
+                        ],
+                    ],
+                ],
+            ])),
+            // Response for this week query
             new Response(200, [], (string) json_encode([
                 'data' => [
                     'viewer' => [
@@ -297,8 +310,8 @@ class PostWeeklyPrioritiesUnitTest extends TestCase
         $output = $commandTester->getDisplay();
         $this->assertStringContainsString('Dry Run', $output);
 
-        // And: Mock handler should have been called exactly once (for Linear API)
-        $this->assertEquals(0, $mockHandler->count(), 'One request should have been made');
+        // And: Mock handler should have been called twice (for both Linear API queries)
+        $this->assertEquals(0, $mockHandler->count(), 'Two requests should have been made to Linear API');
     }
 
     public function testFormatIssuesForSlackUsesRichTextBlocks(): void

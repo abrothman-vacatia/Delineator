@@ -57,7 +57,7 @@ class PostWeeklyPriorities extends Command
             return Command::FAILURE;
         }
 
-        if (!$this->httpClient instanceof \GuzzleHttp\Client) {
+        if (!$this->httpClient instanceof Client) {
             $this->httpClient = new Client();
         }
 
@@ -212,10 +212,10 @@ class PostWeeklyPriorities extends Command
         // Combine both result sets into one user array
         $lastWeekAssignedIssues = is_array($lastWeekViewer['assignedIssues'] ?? null) ? $lastWeekViewer['assignedIssues'] : [];
         $thisWeekAssignedIssues = is_array($thisWeekViewer['assignedIssues'] ?? null) ? $thisWeekViewer['assignedIssues'] : [];
-        
+
         $lastWeekNodes = is_array($lastWeekAssignedIssues['nodes'] ?? null) ? $lastWeekAssignedIssues['nodes'] : [];
         $thisWeekNodes = is_array($thisWeekAssignedIssues['nodes'] ?? null) ? $thisWeekAssignedIssues['nodes'] : [];
-        
+
         $combinedUser = [
             'id' => $thisWeekViewer['id'] ?? '',
             'name' => $thisWeekViewer['name'] ?? '',
@@ -290,7 +290,7 @@ class PostWeeklyPriorities extends Command
                 $stateName = isset($issue['state']) && is_array($issue['state']) && isset($issue['state']['name']) && is_string($issue['state']['name']) ? $issue['state']['name'] : '';
 
                 // Determine state symbol - if blocked, use 'blocked' regardless of actual state
-                $stateSymbol = $blockedBy === [] ? match ($stateName) {
+                $stateSymbol = [] === $blockedBy ? match ($stateName) {
                     'Done' => 'done_linear',
                     'In Review' => 'in_review_linear',
                     'In Progress' => 'in_progress_linear',
@@ -382,23 +382,23 @@ class PostWeeklyPriorities extends Command
         // Sort function for issues
         $sortIssues = function (array $a, array $b): int {
             $statePositionDiff = $a['statePosition__c'] <=> $b['statePosition__c'];
-            if ($statePositionDiff !== 0) {
+            if (0 !== $statePositionDiff) {
                 return $statePositionDiff;
             }
 
             $estimateDiff = $b['estimate'] <=> $a['estimate'];
-            if ($estimateDiff !== 0) {
+            if (0 !== $estimateDiff) {
                 return $estimateDiff;
             }
 
             $priorityDiff = $a['priority'] <=> $b['priority'];
-            if ($priorityDiff !== 0) {
+            if (0 !== $priorityDiff) {
                 return $priorityDiff;
             }
 
             if (isset($a['completedAt']) || isset($b['completedAt'])) {
                 $completedAtDiff = $a['completedAt'] <=> $b['completedAt'];
-                if ($completedAtDiff !== 0) {
+                if (0 !== $completedAtDiff) {
                     return $completedAtDiff;
                 }
             }
@@ -414,7 +414,7 @@ class PostWeeklyPriorities extends Command
         $weeklyIssues = [];
 
         // Add last week if there are issues
-        if ($lastWeekIssues !== []) {
+        if ([] !== $lastWeekIssues) {
             $weeklyIssues[] = [
                 'week' => $lastWeekLabel,
                 'issues' => $lastWeekIssues,
@@ -422,7 +422,7 @@ class PostWeeklyPriorities extends Command
         }
 
         // Add this week if there are issues
-        if ($thisWeekIssues !== []) {
+        if ([] !== $thisWeekIssues) {
             $weeklyIssues[] = [
                 'week' => $thisWeekLabel,
                 'issues' => $thisWeekIssues,
@@ -584,7 +584,7 @@ class PostWeeklyPriorities extends Command
                     }
 
                     // Add the bullet list for blockers
-                    if ($bulletListItems !== []) {
+                    if ([] !== $bulletListItems) {
                         $richTextElements[] = [
                             'type' => 'rich_text_list',
                             'style' => 'bullet',
@@ -597,7 +597,7 @@ class PostWeeklyPriorities extends Command
             }
 
             // Add any remaining ordered list items
-            if ($orderedListItems !== []) {
+            if ([] !== $orderedListItems) {
                 $richTextElements[] = [
                     'type' => 'rich_text_list',
                     'style' => 'ordered',
@@ -609,7 +609,7 @@ class PostWeeklyPriorities extends Command
             }
 
             // Add the rich text block if there are elements
-            if ($richTextElements !== []) {
+            if ([] !== $richTextElements) {
                 $blocks[] = [
                     'type' => 'rich_text',
                     'elements' => $richTextElements,
