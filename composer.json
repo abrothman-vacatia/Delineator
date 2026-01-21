@@ -71,7 +71,7 @@
         "phpstan/extension-installer": "^1.4.3",
         "phpstan/phpstan-symfony": "^2.0.10",
         "phpunit/phpunit": "^12.5.6",
-        "rector/rector": "^2.3.2",
+        "rector/rector": "^2.3.4",
         "symfony/browser-kit": ">=8.0.3",
         "symfony/css-selector": ">=8",
         "symfony/phpunit-bridge": ">=8.0.3"
