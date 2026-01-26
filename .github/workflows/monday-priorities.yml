@@ -2,11 +2,11 @@ name: Monday Priorities Update
 
 on:
   schedule:
-    # Run every Monday at 9:00 AM PST
+    # Run every Monday at 8:00 AM PST
     # PST is UTC-8, PDT is UTC-7
-    # Using 17:00 UTC for 9:00 AM PST (standard time)
+    # Using 16:00 UTC for 8:00 AM PST (standard time)
     # Note: GitHub Actions uses UTC time for cron expressions
-    - cron: '0 17 * * 1'
+    - cron: '0 16 * * 1'
 
   # Allow manual triggering for testing
   workflow_dispatch:

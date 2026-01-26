@@ -90,11 +90,10 @@ class PostWeeklyPriorities extends Command
                 $io->success('Successfully posted update to Slack!');
 
                 return Command::SUCCESS;
-            } else {
-                $io->error('Failed to post to Slack.');
-
-                return Command::FAILURE;
             }
+            $io->error('Failed to post to Slack.');
+
+            return Command::FAILURE;
         } catch (\Exception $e) {
             $io->error('Error: '.$e->getMessage());
 
