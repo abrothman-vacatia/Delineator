@@ -75,12 +75,12 @@ class PostWeeklyPriorities extends Command
             }
 
             // Step 2: Find the weekly message thread
-            $io->section('Finding weekly message thread...');
-            $threadTs = $this->findWeeklyMessageThread();
+//            $io->section('Finding weekly message thread...');
+//            $threadTs = $this->findWeeklyMessageThread();
 
-            if (!$threadTs) {
-                $io->warning('Could not find weekly message thread. Posting as new message.');
-            }
+//            if (!$threadTs) {
+//                $io->warning('Could not find weekly message thread. Posting as new message.');
+//            }
 
             // Step 3: Post to Slack
             $io->section('Posting to Slack...');
