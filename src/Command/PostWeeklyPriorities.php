@@ -670,8 +670,10 @@ class PostWeeklyPriorities extends Command
         /** @var array<string, mixed> $payload */
         $payload = json_decode($message, true) ?: [];
         $payload['channel'] = $this->channelId;
-        $payload['reply_broadcast'] = true;
-
+        if (!str_starts_with($this->channelId, 'D')) {
+            $payload['reply_broadcast'] = true;
+        }
+        
         if ($threadTs) {
             $payload['thread_ts'] = $threadTs;
         }
