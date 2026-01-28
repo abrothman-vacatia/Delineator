@@ -1,6 +1,6 @@
 name: Monday Priorities Update
 
-# on:
+on:
   # schedule:
     # Run every Monday at 8:00 AM PST
     # PST is UTC-8, PDT is UTC-7
